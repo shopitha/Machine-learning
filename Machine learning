@@ -1,0 +1,197 @@
+<img src='https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRIXJO_AnGlrzm96u_FS8TTJTZ7UyamK8iVNQ&usqp=CAU' width=1300 height=500 style="
+  display: block; margin-left: auto; margin-right: auto; ">
+
+# <center>UK Road Accidents Data
+- The UK government amassed traffic data from 2000 and 2016, recording over *1.8 million* accidents in the process and making this one of the most comprehensive traffic data sets out there. It's a huge picture of a country undergoing change.
+#### Import Libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import plotly 
+import plotly.express as ex
+import seaborn as sns
+from sklearn.preprocessing import StandardScaler
+from scipy.stats import norm
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LogisticRegression
+
+
+sns.set(style= 'whitegrid', color_codes=True)
+# %matplotlib inline
+# to measure linear / non-linear relationship B/W two columns
+# pip install ppscore
+# import ppscore as ppscore
+### 1. Data Import
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+df= pd.read_csv('../input/road-accident-united-kingdom-uk-dataset/UK_Accident.csv')
+# final_df = pd.concat(sub_sets)
+final_df= df
+final_df.shape
+final_df.sample(4)
+## <u> Que-1:
+- What are the number of casualties in each day of the week? Sort them in descending order.
+print(final_df.info())
+final_df['Year'].unique()
+final_df
+
+# dropping Junction_Detail as this column doesn't contribute anything
+# final_df.drop(["Junction_Detail"],axis=1,inplace = True)
+# As NULL values are less as compared to size of whole data
+# So, Preprocessing the data and filling the null values with logically identified values from each feature.
+final_df['Road_Surface_Conditions'].fillna(value = 'Normal', inplace = True)
+final_df['Special_Conditions_at_Site'].fillna(value = 'None', inplace = True)
+final_df['Carriageway_Hazards'].fillna(value = 'None', inplace = True)
+final_df['Did_Police_Officer_Attend_Scene_of_Accident'].fillna(value = 'No', inplace = True)
+final_df['Weather_Conditions'].fillna(value = 'Unknown', inplace = True)
+final_df['Junction_Control'].fillna(value = 'None', inplace = True)
+final_df['Location_Northing_OSGR'].fillna(value = 0, inplace = True)
+final_df['Latitude'].fillna(value = 0, inplace = True)
+data = {'Casualties_Count' : final_df['Number_of_Casualties'],
+             'Day_of_Week' : final_df['Day_of_Week']}
+accidents_per_week = pd.DataFrame(data)
+accidents_per_week.groupby(by='Day_of_Week').sum().sort_values(by = 'Casualties_Count', ascending = False)
+cas_count= accidents_per_week.groupby(by='Day_of_Week').sum().sort_values(by = 'Casualties_Count', ascending = False)
+# getting group-by size for sorting of color intensity according to Count values
+size_gb= accidents_per_week.groupby(by='Day_of_Week').size()
+dev_color= size_gb.argsort().argsort() # argsort for index wise sorting
+pal= sns.color_palette('Reds', len(dev_color)) # choose color palette accordingly
+sns.countplot(x=accidents_per_week.Day_of_Week, 
+              data=accidents_per_week,
+              palette=np.array(pal[::])[dev_color]) 
+# 6th day of the week has seen more number of accidents
+## <u> Que-3:
+- On each day of the week, what is the maximum and minimum speed limit on the roads the accidents happened?
+accidents_per_week['Speed_Limit'] = final_df.Speed_limit
+accidents_per_week.sample(4)
+- For this Question we'll make use of SQL-Language 
+- To use SQL use with Pandas there's Package <u> pandasql
+# pip install -U pandasql
+import pandasql as ps
+chunks = []
+for val in range(1,8) : # Since there are 7 days, we're using the loop from 1 to 8.
+    qurery1 = """select accidents_per_week.Day_of_Week, sum(accidents_per_week.Casualties_Count) Casualties_Count,
+            max(accidents_per_week.Speed_Limit) Max_Speed ,min(accidents_per_week.Speed_Limit) Min_Speed
+            from accidents_per_week where accidents_per_week.Casualties_Count > 0 and accidents_per_week.Day_of_Week= """+str(val)
+    chunks.append(ps.sqldf(qurery1, locals())) # parameters (Query, db_url) and returns DataFrame
+    
+speed_limit_accident_data = pd.concat(chunks, ignore_index=True) # concatination of chunks
+speed_limit_accident_data
+val = ["Max-Speed","Min_Speed"]
+plt.figure(figsize=(5,5))
+sns.barplot(x='Day_of_Week', y = 'Min_Speed' , data=speed_limit_accident_data, palette='YlGnBu_r')
+plt.show()
+sns.barplot(x='Day_of_Week', y = 'Max_Speed' , data=speed_limit_accident_data, palette='YlGnBu')
+plt.show()
+## <u> Que-4: 
+- What is the importance of Light and Weather conditions in predicting accident severity?
+- What does your intuition say and what does the data portray?
+accident_severity_data = {'Light_Conditions' : final_df.Light_Conditions, 
+                          'Weather_Conditions' : final_df.Weather_Conditions,
+                          'Accident_Severity' : final_df.Accident_Severity}
+accident_severity_df = pd.DataFrame(accident_severity_data)
+accident_severity_df.sample(4)
+print(accident_severity_df.describe(),'\n')
+print(accident_severity_df.info())
+# Converting Object data-type into Category datatype
+for object_feature in accident_severity_df.dtypes[accident_severity_df.dtypes == 'object'].index :
+     accident_severity_df[object_feature] = accident_severity_df[object_feature].astype('category')
+accident_severity_df.info()
+# One Hot Encoding the categorical columns
+accident_severity_df = pd.get_dummies(data=accident_severity_df, columns=['Light_Conditions', 'Weather_Conditions'])
+accident_severity_df.sample(2)
+# Correlation between 'Accident_Severity' and rest of variables
+accident_severity = accident_severity_df.corr().loc['Accident_Severity':] 
+accident_severity = pd.DataFrame(accident_severity)
+# np.hstack(np.split(accident_severity, 1))
+accident_severity
+plt.figure(figsize=(15,20))
+sns.heatmap(accident_severity, vmin=-1, cmap='plasma_r', annot = True)
+### <u>Intuition (Summary):
+- As per our intuition, we can say that the number of accidents will be more when the light and weather conditions are at worse. Like when there is no there light present at night, the number of accidents could be more. Similarly, in bad weather conditions like too much winds, rainfall or snowing could lead to more number of accidents.
+
+- From Data: From the above correlation matrix of the data, we can observe that both Light_conditions and Weather_Conditions doesn't have much effect on Accident_severity as they are almost close to 0. Light_conditions with Street Light present is more impactful compared to Weather_Conditions.
+
+- So the interpretation could be like when Street Light is present compared Daytime, the number of accidents being caused and their severity are much higher.
+## <u>Que-5: 
+- To predict the severity of the accidents which columns are unnecessary as logically and should be dropped before implementing a any prediction (regression) model.
+# From the above correlation, we have seen that Light_Conditions and Weather_Conditions are not much impactful,
+# so we can drop them
+accident_severity_df =final_df.copy()
+accident_severity_df.info()
+accident_severity_df['Pedestrian_Crossing-Human_Control'].value_counts() 
+accident_severity_df['Pedestrian_Crossing-Physical_Facilities'].value_counts() 
+accident_severity_df['Light_Conditions'].value_counts() 
+accident_severity_df['Special_Conditions_at_Site'].value_counts() 
+accident_severity_df['Carriageway_Hazards'].value_counts()
+accident_severity_df['Junction_Control'].value_counts()
+#### From above Numbers,
+- Pedestrian_Crossing can be dropped as almost 90% of the data is None
+- Pedestrian_Crossing-Physical_Facilities can be dropped as almost 80% of the data is None
+- Light_Conditions can be dropped as earlier we have seen Light_Conditions & Weather_Conditions are not much impactful
+- Special_Conditions_at_Site can be dropped as 90% data is None
+- Carriageway_Hazards can be dropped as 90% data is None
+- Did_Police_Officer_Attend_Scene_of_Accident can be dropped as Police comes after the accident has occured and it doesn't logically impact the severity of the accident
+- Carriageway_Hazards can be dropped as 90% data is None 
+- We can also drop Accident_Index as it only keeps the count of the accidents
+- We can also drop Date, Time of Accidents as logically they don't impact the Severity of Accidents
+drop_cols= ['Pedestrian_Crossing-Human_Control','Pedestrian_Crossing-Physical_Facilities','Light_Conditions'
+           ,'Special_Conditions_at_Site','Carriageway_Hazards','Carriageway_Hazards','Junction_Control'
+           ,'Did_Police_Officer_Attend_Scene_of_Accident']
+plt.figure(figsize=(12,8))
+sns.barplot(x = 'Road_Type', y = 'Accident_Severity', data = accident_severity_df, palette='rocket')
+plt.figure(figsize=(10,10))
+sns.barplot(x = 'Road_Surface_Conditions', y = 'Accident_Severity', data = accident_severity_df, palette='rocket_r')
+# final_df.to_csv('UK_Accident.csv')
+for feature in accident_severity_df.dtypes[accident_severity_df.dtypes == 'object'].index :
+    accident_severity_df.drop(columns = feature, inplace = True)
+accident_severity_df.info()
+corr_matrix = accident_severity_df.corr()
+corr_matrix
+plt.figure(figsize=(15,10))
+sns.heatmap(corr_matrix, annot=True, vmin=-1, cmap='plasma_r')
+plt.figure(figsize=(18,5))
+corr_matrix['Accident_Severity'].sort_values(ascending=False).plot(color='#ff000d')
+final_accident_severity_df = accident_severity_df.copy()
+final_accident_severity_df.info()
+# deleting the columns with correlation < 0.02 and >-0.02 as they are not much impactful compared to others
+for feature in accident_severity_df.dtypes[accident_severity_df.dtypes != 'object'].index :
+    if(corr_matrix['Accident_Severity'][feature] < 0.02 and  corr_matrix['Accident_Severity'][feature] > -0.02) :
+        final_accident_severity_df.drop(columns = feature, inplace = True) 
+        
+# Inversely proportional columns as well as they can impact the Accident_severity (> -0.02)
+# Impactful columns for Accident_Severity are as follows
+final_accident_severity_df.sample(4)
+## <u>Additive Work: 
+- I've used Logistic Regression Model using scikit learn with cross validation = 5, where you predict the severity of the accident (Accident_Severity).
+- here, i've not optimized hyperparameter but figured out what features will be best to use.
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error
+check = final_accident_severity_df.copy()
+severity = check['Accident_Severity']
+severity = pd.DataFrame(severity, columns = ['Accident_Severity'])
+severity.sample(3)
+<u>*Multiclass classification*</u> with logistic regression can be done either through the one-vs-rest scheme in which for each class a binary classification problem of data belonging or not to that class is done, or changing the loss function to cross- entropy loss.
+
+In the multiclass case, the training algorithm uses the one-vs-rest (OvR) scheme if the ‘multi_class’ option is set to ‘ovr’ and uses the cross-entropy loss if the ‘multi_class’ option is set to ‘multinomial’. (Currently, the ‘multinomial’ option is supported only by the ‘lbfgs’, ‘sag’ and ‘newton-cg’ solvers.) By default, multi_class is set to ’ovr’.
+model = LogisticRegression(solver = 'lbfgs', max_iter = 100)
+score = cross_val_score(model, check, severity, cv = 5)
+score.mean()
+### I Hope You Liked the Notebook and Learned something new from the Notebook
